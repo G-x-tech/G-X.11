@@ -64,19 +64,28 @@
 流水线已内置部署阶段，产物是 Docker 镜像，推到 GitHub 自家的 GHCR：
 
 ```
-ghcr.io/G-x-tech/G-X.11:latest          # 默认分支最新
-ghcr.io/G-x-tech/G-X.11:main            # 分支名
-ghcr.io/G-x-tech/G-X.11:<短 sha>        # 某次提交
+ghcr.io/g-x-tech/g-x.11:latest          # 默认分支最新
+ghcr.io/g-x-tech/g-x.11:main            # 分支名
+ghcr.io/g-x-tech/g-x.11:<短 sha>        # 某次提交
+
+注意镜像名是**全小写**的：仓库名 `G-X.11` 带大写，而 GHCR 不接受大写镜像名，
+流水线里用 `tr '[:upper:]' '[:lower:]'` 做了转换。
 ```
 
 拉下来跑：
 
 ```bash
-docker run --rm ghcr.io/G-x-tech/G-X.11:latest 1 2 3
+docker run --rm ghcr.io/g-x-tech/g-x.11:latest 1 2 3
 # 个数 : 3    合计 : ¥6.00    均值 : ¥2.00
 ```
 
 镜像在仓库右侧的 **Packages** 里能看到。
+
+> ⚠️ **一次性前置设置**：GHCR 推送用的是内置 `GITHUB_TOKEN`。
+> 如果你的仓库默认工作流权限是只读，推送会 403 失败。
+> 去 **Settings → Actions → General → Workflow permissions**，
+> 选 **Read and write permissions** 并保存。改完后重新跑一次即可。
+> 此后再也没有需要手工配置的凭证。
 
 ### `Dockerfile` 的取舍
 
