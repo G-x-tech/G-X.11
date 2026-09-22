@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # 允许在 Actions 页面手动触发
+  workflow_dispatch:
+
+# 最小权限原则：默认只读，按需在各 job 内单独提权
+permissions:
+  contents: read
+
+# 同一分支/PR 上重复推送时，自动取消上一个还没跑完的任务，省机器时间
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build-test:
+    name: 构建与测试 · Node ${{ matrix.node-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      # 某个 Node 版本挂了不要立刻掐掉其他版本，方便一次看清全貌
+      fail-fast: false
+      matrix:
+        # Node 20 已于 2026-04 EOL；这里覆盖当前 LTS(22) 与 Current(24)
+        node-version: [22, 24]
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 Node ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          # 依据 package-lock.json 自动缓存 ~/.npm
+          cache: npm
+
+      - name: 安装依赖
+        # 用 npm ci 而非 npm install：严格按 lockfile 装，保证可复现
+        run: npm ci
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 构建
+        run: npm run build
+
+      - name: 单元测试
+        run: npm test
+
+      - name: 冒烟测试（直接跑构建产物）
+        run: npm run smoke
+
+      - name: 上传构建产物
+        # 只在 LTS 版本上留一份产物，避免矩阵重复上传
+        if: matrix.node-version == 22
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-node-${{ matrix.node-version }}
+          path: dist/
+          retention-days: 7
+          if-no-files-found: error
+
+  # 聚合门：不论矩阵怎么拆，分支保护只需要盯这一个 check
+  ci-gate:
+    name: CI 通过
+    if: always()
+    needs: build-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检查上游结果
+        run: |
+          if [ "${{ needs.build-test.result }}" != "success" ]; then
+            echo "::error::构建或测试失败（${{ needs.build-test.result }}）"
+            exit 1
+          fi
+          echo "全部矩阵任务通过"
