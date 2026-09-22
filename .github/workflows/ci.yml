@@ -105,7 +105,21 @@ jobs:
             type=sha,prefix=,format=short
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: 构建并推送镜像
+      - name: 构建镜像（只验证不推送）
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: ${{ steps.image.outputs.name }}:ci-verify
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 冒烟测试镜像
+        # 真的把镜像跑起来，验证 ENTRYPOINT 与产物路径正确
+        run: docker run --rm ${{ steps.image.outputs.name }}:ci-verify 1 2 3
+
+      - name: 推送镜像到 GHCR
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -113,7 +127,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
 
   # 聚合门：不论矩阵怎么拆，分支保护只需要盯这一个 check
   ci-gate:
