@@ -9,7 +9,9 @@
 
 ```
 .
-├── .github/workflows/ci.yml   # CI 流水线（构建 + 测试，不含任何密钥）
+├── .github/workflows/ci.yml   # CI/CD 流水线（构建 + 测试 + 部署，零 Secrets）
+├── Dockerfile                 # 多阶段构建，运行阶段不带 devDependencies
+├── .dockerignore
 ├── src/
 │   ├── math.ts                # 纯函数
 │   ├── index.ts               # 包入口
@@ -49,21 +51,51 @@
 - **缓存**：`setup-node` 的 `cache: npm` 按 `package-lock.json` 自动缓存。
 - **安装**：`npm ci` 而不是 `npm install`——严格复现 lockfile，杜绝「我本地是好的」。
 - **四道关卡**：类型检查 → 构建 → 单元测试 → 冒烟测试（直接跑产物，验证 dist 不是空壳）。
-- **产物**：只在 Node 20 上传一份 `dist/`，保留 7 天；`if-no-files-found: error` 保证空产物会红。
+- **产物**：只在 Node 22 上传一份 `dist/`，保留 7 天；`if-no-files-found: error` 保证空产物会红。
 - **聚合门**：`ci-gate` job 汇总矩阵结果，分支保护里只需要勾这一个 check，
   以后加减矩阵维度不用改分支保护规则。
-- **权限**：顶层 `permissions: contents: read`，最小权限。
+- **权限**：顶层 `permissions: contents: read`，最小权限；部署 job 单独提权。
 - **并发**：同一 ref 上重复推送会取消上一个未完成的运行（PR 场景）。
+- **部署**：`deploy` job 在 main 推送或手动触发时构建镜像推到 GHCR，
+  用内置 `GITHUB_TOKEN` 登录，**不需要配任何 Secrets**；PR 上自动跳过。
 
-## 怎么加部署
+## 部署
 
-当前流水线**不含任何 Secrets**，`ci-gate` 就是终点。要接部署，加一个 `needs: ci-gate` 的 job：
+流水线已内置部署阶段，产物是 Docker 镜像，推到 GitHub 自家的 GHCR：
+
+```
+ghcr.io/G-x-tech/G-X.11:latest          # 默认分支最新
+ghcr.io/G-x-tech/G-X.11:main            # 分支名
+ghcr.io/G-x-tech/G-X.11:<短 sha>        # 某次提交
+```
+
+拉下来跑：
+
+```bash
+docker run --rm ghcr.io/G-x-tech/G-X.11:latest 1 2 3
+# 个数 : 3    合计 : ¥6.00    均值 : ¥2.00
+```
+
+镜像在仓库右侧的 **Packages** 里能看到。
+
+### `Dockerfile` 的取舍
+
+- **多阶段**：构建阶段装全部依赖并编译，运行阶段只拷 `dist/src`，
+  `devDependencies` 和源码都不进最终镜像。
+- **`npm ci --omit=dev`**：本项目运行时零第三方依赖，运行阶段装完几乎是空的。
+- **`USER node`**：不用 root 跑容器。
+- **`.dockerignore`**：排除 `node_modules/` `dist/` `.git/`，否则本地产物会污染构建上下文。
+
+### 换成别的部署目标
+
+要换成其他目标时，把 `deploy` job 的 steps 替换掉即可，其余不用动。
+比如部署静态产物到 GitHub Pages：
 
 ```yaml
   deploy:
     name: 部署到 GitHub Pages
-    needs: ci-gate
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: build-test
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -94,4 +126,4 @@
 2. 对齐 `package.json` 里的脚本名（`typecheck` / `build` / `test` / `smoke`）——
    脚本名对上了，YAML 基本不用动。
 3. 调整 `matrix.node-version` 到你实际支持的版本。
-4. 需要部署时再按上一节加 job。
+4. 部署默认走 GHCR 镜像；要换目标就替换 `deploy` job 的 steps。
