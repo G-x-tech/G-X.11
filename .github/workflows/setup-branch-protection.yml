@@ -1,20 +1,22 @@
 name: 配置分支保护
 
-# 分支保护属于「仓库管理设置」，普通 CI 里不方便手点，所以做成配置即生效：
-# 只要 .github/branch-protection.json 有改动并推到 main，这个工作流就自动把规则下发。
-# 也可以在 Actions 页面手动 workflow_dispatch 重跑。
+# 用途：把 .github/branch-protection.json 里的规则下发到 main 分支。
+#
+# 为什么不能全自动：管理分支保护需要仓库管理（administration）权限，而它
+# **不在 GITHUB_TOKEN 的权限表里**（属于细粒度 PAT 的权限）。把
+# administration: write 写成 workflow 权限会被直接拒绝：
+#   Invalid workflow file: (Line: 17, Col: 3): Unexpected value 'administration'
+# 因此这里改用可选的 PAT Secret；没配就只打印提示并跳过，不让流水线变红。
 on:
   push:
     branches: [main]
     paths:
       - .github/branch-protection.json
+      - .github/workflows/setup-branch-protection.yml
   workflow_dispatch:
 
-# 分支保护需要仓库管理权限，GITHUB_TOKEN 支持 administration: write，
-# 因此不需要任何 Personal Access Token 或 Secrets。
 permissions:
   contents: read
-  administration: write
 
 jobs:
   apply:
@@ -27,12 +29,19 @@ jobs:
 
       - name: 下发分支保护规则
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 需要在仓库 Secret 里配置 BRANCH_PROTECTION_TOKEN
+          # （细粒度 PAT，权限 Administration: Read and write）
+          GH_TOKEN: ${{ secrets.BRANCH_PROTECTION_TOKEN }}
         run: |
-          set -euo pipefail
-          # 只允许通过 PR 合入 main，且必须等 CI 通过（聚合门这一个 check 就够）
-          gh api -X PUT "repos/${{ github.repository }}/branches/main/protection" \
+          set -uo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::notice::未配置 BRANCH_PROTECTION_TOKEN，跳过下发。"
+            echo "GITHUB_TOKEN 不含 administration 权限，分支保护只能手动点或用 PAT。"
+            echo "两种做法见 README「分支保护」一节。"
+            exit 0
+          fi
+          gh api -X PUT "repos/${GITHUB_REPOSITORY}/branches/main/protection" \
             --input .github/branch-protection.json
-          echo "已下发规则，当前生效内容："
-          gh api "repos/${{ github.repository }}/branches/main/protection" \
-            --jq '{required_checks: [.required_status_checks.checks[].context], strict: .required_status_checks.strict, force_push: .allow_force_pushes.enabled, deletions: .allow_deletions.enabled}'
+          echo "下发成功，当前生效规则："
+          gh api "repos/${GITHUB_REPOSITORY}/branches/main/protection" \
+            --jq '{checks: [.required_status_checks.checks[].context], strict: .required_status_checks.strict, allow_force_push: .allow_force_push, allow_deletions: .allow_deletions}'

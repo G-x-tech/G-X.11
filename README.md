@@ -173,6 +173,46 @@ GET <check_run_url>/annotations
 而不是把顶层 `permissions` 放大——这样 PR 里的流水线永远拿不到部署凭证。
 注意 Pages 还需要在 **Settings → Pages → Source** 里选 **GitHub Actions**。
 
+## 分支保护
+
+目标：`main` 只允许通过 PR 合入，且必须等 CI 绿了才能合，同时禁止强推与删除分支。
+
+规则定义在 `.github/branch-protection.json`，只要求一个 check——聚合门 **CI 通过**。
+这样以后加减 Node 矩阵维度，都不用回头改保护规则。
+
+> ⚠️ **这一步没法完全自动**：管理分支保护需要仓库管理（administration）权限，
+> 而它**不在 `GITHUB_TOKEN` 的权限表里**（属于细粒度 PAT 的权限）。
+> 实测把 `administration: write` 写进 workflow 会被 GitHub 直接判为非法文件：
+>
+> ```
+> Invalid workflow file: (Line: 17, Col: 3): Unexpected value 'administration'
+> ```
+>
+> 所以剩下的部分只能在网页点一下，或者配一个 PAT 让它一键下发。
+
+### 方式一：网页点（约 30 秒）
+
+1. 打开 `Settings → Branches → Add branch protection rule`
+2. **Branch name pattern** 填 `main`
+3. 勾 **Require status checks to pass before merging**
+   - 在搜索框输入 `CI 通过` 并选中（该 check 必须至少跑过一次才会出现在列表里）
+   - 建议同时勾 **Require branches to be up to date before merging**
+4. 勾 **Do not allow force pushes** 和 **Do not allow deletions**
+5. **Create**
+
+### 方式二：配 PAT 后一键下发（一次配置，长期有效）
+
+1. 建细粒度 PAT：`Settings → Developer settings → Personal access tokens →
+   Fine-grained tokens → Generate new token`
+   - Repository access：**Only select repositories** → 选中本仓库
+   - Repository permissions：**Administration → Read and write**
+2. 存成仓库 Secret：`Settings → Secrets and variables → Actions →
+   New repository secret`，名字必须是 `BRANCH_PROTECTION_TOKEN`
+3. 在 **Actions → 配置分支保护 → Run workflow** 手动跑一次
+
+之后只要改 `.github/branch-protection.json` 并推到 `main`，规则就会自动同步。
+没配这个 Secret 时，该工作流只会打印一条 notice 然后正常退出，不会把流水线弄红。
+
 ## 用在你自己的项目上
 
 1. 把 `src/` 和 `test/` 换成你的代码。
