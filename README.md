@@ -175,7 +175,7 @@ GET <check_run_url>/annotations
 
 ## 分支保护
 
-目标：`main` 只允许通过 PR 合入，且必须等 CI 绿了才能合，同时禁止强推与删除分支。
+目标：`main` 必须等 CI 绿了才能更新，同时禁止强推与删除分支。
 
 规则定义在 `.github/branch-protection.json`，只要求一个 check——聚合门 **CI 通过**。
 这样以后加减 Node 矩阵维度，都不用回头改保护规则。
@@ -190,15 +190,41 @@ GET <check_run_url>/annotations
 >
 > 所以剩下的部分只能在网页点一下，或者配一个 PAT 让它一键下发。
 
-### 方式一：网页点（约 30 秒）
+### 方式一：网页点（约 1 分钟）
 
-1. 打开 `Settings → Branches → Add branch protection rule`
-2. **Branch name pattern** 填 `main`
-3. 勾 **Require status checks to pass before merging**
-   - 在搜索框输入 `CI 通过` 并选中（该 check 必须至少跑过一次才会出现在列表里）
-   - 建议同时勾 **Require branches to be up to date before merging**
-4. 勾 **Do not allow force pushes** 和 **Do not allow deletions**
-5. **Create**
+GitHub 现在有新旧两套界面。新版是 **规则集（Rulesets）**：
+`Settings → Rules → Rulesets → New branch ruleset`，目标填 `main`。
+
+逐项怎么勾：
+
+| 界面上的项目 | 勾选 | 说明 |
+| --- | --- | --- |
+| 要求通过状态检查 | ✅ | **必须点「+ 添加检查」把 `CI 通过` 选上**。列表留空等于这条规则没开 |
+| 阻止强制推送 | ✅ | 防止 `push -f` 覆盖历史 |
+| 限制删除 | ✅ | 防止 `main` 被误删 |
+| 限制更新 / 限制推送 | ⬜ | 会把「谁能推」收窄到绕过名单，单人项目纯添麻烦 |
+| 要求线性历史 | ⬜ | 禁止 merge commit，而本仓库历史里已经有一个 merge commit |
+| 要求部署才能成功 | ⬜ | 没有登记 Deployment environment，开了只会挡住合并 |
+| 要求签署提交 | ⬜ | 当前 SSH 密钥只登记为**认证密钥**，本地提交未签名，开了会直接被拒 |
+| 合并前要求提供拉取请求 | ⬜ | 单人项目不必；勾了就必须走 PR |
+| 要求分支在合并前保持最新 | ⬜ | 只在走 PR 时有意义，会让每次合并多一个回合 |
+| 创建时不要求状态检查 | ✅ 可选 | 豁免「分支刚建、检查还没跑」的场景，避免把自己锁在外面 |
+
+顶部的**执行状态必须设为「启用 / Active」**，绕过列表**留空**（留空规则才真的管住你）。
+
+> ⚠️ **勾上「要求通过状态检查」之后，就不能再直接 `git push origin main` 了。**
+> 规则说明里那句「提交必须先推送到另一个引用」是字面意思——直推会被拒，报
+> `Required status check "CI 通过" is expected`。之后的改法：
+>
+> ```bash
+> git switch -c feat/xxx
+> git commit -am "..."
+> git push -u origin feat/xxx     # PR 上跑 CI
+> # 等 CI 绿 → 合并 PR
+> ```
+>
+> 想保留直推 `main` 的能力，两个办法：把主账号加进**绕过列表**（代价是强推/删除保护
+> 对你也一并失效），或者干脆不勾这一条、只留强推与删除保护。
 
 ### 方式二：配 PAT 后一键下发（一次配置，长期有效）
 
