@@ -90,6 +90,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # 必须显式配置 Buildx：默认的 docker 驱动不支持把缓存导出到外部后端，
+      # 下面只要用了 cache-to: type=gha 就会直接报错（buildx failed with: ...build-cache-backends）
+      - name: 配置 Buildx
+        uses: docker/setup-buildx-action@v4
+
       - name: 计算镜像名
         id: image
         # GHCR 要求镜像名全小写，本仓库名 G-X.11 含大写字母，必须转换
