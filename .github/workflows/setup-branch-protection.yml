@@ -1,0 +1,38 @@
+name: 配置分支保护
+
+# 分支保护属于「仓库管理设置」，普通 CI 里不方便手点，所以做成配置即生效：
+# 只要 .github/branch-protection.json 有改动并推到 main，这个工作流就自动把规则下发。
+# 也可以在 Actions 页面手动 workflow_dispatch 重跑。
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/branch-protection.json
+  workflow_dispatch:
+
+# 分支保护需要仓库管理权限，GITHUB_TOKEN 支持 administration: write，
+# 因此不需要任何 Personal Access Token 或 Secrets。
+permissions:
+  contents: read
+  administration: write
+
+jobs:
+  apply:
+    name: 应用分支保护规则
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 下发分支保护规则
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # 只允许通过 PR 合入 main，且必须等 CI 通过（聚合门这一个 check 就够）
+          gh api -X PUT "repos/${{ github.repository }}/branches/main/protection" \
+            --input .github/branch-protection.json
+          echo "已下发规则，当前生效内容："
+          gh api "repos/${{ github.repository }}/branches/main/protection" \
+            --jq '{required_checks: [.required_status_checks.checks[].context], strict: .required_status_checks.strict, force_push: .allow_force_pushes.enabled, deletions: .allow_deletions.enabled}'
