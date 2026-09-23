@@ -1,5 +1,7 @@
 # cicd-starter
 
+[![CI](https://github.com/G-x-tech/G-X.11/actions/workflows/ci.yml/badge.svg)](https://github.com/G-x-tech/G-X.11/actions/workflows/ci.yml)
+
 一个刻意保持最小、但**真的能跑通**的 Node + TypeScript 项目，用来演示 GitHub Actions 的自动构建、测试与部署。
 
 之所以做成模板而不是只丢一个 YAML：CI 流水线的每一步都得对应项目里真实存在的脚本，
